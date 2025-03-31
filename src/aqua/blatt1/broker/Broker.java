@@ -29,44 +29,52 @@ public class Broker {
         @Override
         public void run() {
             Serializable payload = message.getPayload();
-            try {
-                @SuppressWarnings("unused")
-                RegisterRequest _register = (RegisterRequest) payload;
+            if (payload instanceof RegisterRequest) {
                 register(message.getSender());
-            } catch (Exception e) {
             }
-            try {
-                @SuppressWarnings("unused")
-                DeregisterRequest _deregister = (DeregisterRequest) payload;
+            if (payload instanceof DeregisterRequest) {
                 deregister(message.getSender());
-            } catch (Exception e) {
             }
-            try {
-                HandoffRequest handoff = (HandoffRequest) payload;
-                FishModel fish = handoff.getFish();
-                handoffFish(message.getSender(), fish);
-            } catch (Exception e) {
+            if (payload instanceof HandoffRequest) {
+                handoffFish(message.getSender(), ((HandoffRequest) payload).getFish());
             }
-            try {
-                @SuppressWarnings("unused")
-                PoisonPill _poisonPill = (PoisonPill) payload;
+            if (payload instanceof PoisonPill) {
                 stopRequested = true;
-            } catch (Exception e) {
             }
         }
 
         private void register(InetSocketAddress address) {
-            String id = new String("tank" + clientCollection.size());
+            int index = clientCollection.size();
+            String id = new String("tank" + index);
+
             writeLock.lock();
-            clientCollection.add(id.toString(), address);
+            clientCollection.add(id, address);
             writeLock.unlock();
-            endpoint.send(address, new RegisterResponse(id));
+
+            
+            // --- Neighbor Update
+            readLock.lock();
+            InetSocketAddress leftOfRegistered = clientCollection.getLeftNeighorOf(index);
+            InetSocketAddress rightOfRegistered = clientCollection.getRightNeighorOf(index);
+            readLock.unlock();
+            
+            endpoint.send(address, new RegisterResponse(id, leftOfRegistered, rightOfRegistered));
+            endpoint.send(leftOfRegistered, new NeighborUpdate(address, Direction.RIGHT));
+            endpoint.send(rightOfRegistered, new NeighborUpdate(address, Direction.LEFT));
         }
 
         private void deregister(InetSocketAddress address) {
+
             writeLock.lock();
-            clientCollection.remove(clientCollection.indexOf(address));
+            int index = clientCollection.indexOf(address);
+            InetSocketAddress rightNeigbor = clientCollection.getRightNeighorOf(index);
+            InetSocketAddress leftNeighbor = clientCollection.getLeftNeighorOf(index);
+            clientCollection.remove(index);
             writeLock.unlock();
+
+            endpoint.send(rightNeigbor, new NeighborUpdate(leftNeighbor, Direction.LEFT));
+            endpoint.send(leftNeighbor, new NeighborUpdate(rightNeigbor, Direction.RIGHT));
+
         }
 
         private void handoffFish(InetSocketAddress address, FishModel fish) {
@@ -109,7 +117,10 @@ public class Broker {
         uiThread.start();
 
         while (!stopRequested) {
-            Message message = endpoint.blockingReceive();
+            Message message = endpoint.nonBlockingReceive();
+            if (message == null) {
+                continue;
+            }
             try {
                 es.execute(new BrokerTask(message));
             } catch (Exception e) {
@@ -117,9 +128,11 @@ public class Broker {
             }
         }
 
+        System.out.println("Shutdown broker!");
+
         es.shutdown();
         try {
-            if (!es.awaitTermination(500, TimeUnit.MILLISECONDS)) {
+            if (!es.awaitTermination(1, TimeUnit.SECONDS)) {
                 es.shutdownNow();
             }
         } catch (InterruptedException e) {
