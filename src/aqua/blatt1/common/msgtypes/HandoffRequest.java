@@ -4,7 +4,6 @@ import java.io.Serializable;
 
 import aqua.blatt1.common.FishModel;
 
-@SuppressWarnings("serial")
 public final class HandoffRequest implements Serializable {
 	private final FishModel fish;
 

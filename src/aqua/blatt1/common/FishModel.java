@@ -5,7 +5,6 @@ import java.util.Random;
 
 import aqua.blatt1.client.TankModel;
 
-@SuppressWarnings("serial")
 public final class FishModel implements Serializable {
 	private final static int xSize = 100;
 	private final static int ySize = 50;
