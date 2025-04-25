@@ -42,14 +42,16 @@ public class TankView extends JPanel implements Observer {
 		});
 	}
 
-	@SuppressWarnings("unused")
 	private void drawBorders(Graphics2D g2d) {
-		g2d.drawLine(0, 0, 0, TankModel.HEIGHT);
-		g2d.drawLine(TankModel.WIDTH - 1, 0, TankModel.WIDTH - 1, TankModel.HEIGHT);
+		g2d.drawRect(0, 0, TankModel.WIDTH - 1, TankModel.HEIGHT - 1);
 	}
 
 	private void doDrawing(Graphics g) {
 		Graphics2D g2d = (Graphics2D) g;
+
+		if (tankModel.hasToken()) {
+			drawBorders(g2d);
+		}
 
 		for (FishModel fishModel : tankModel) {
 			g2d.drawImage(fishView.getImage(fishModel), fishModel.getX(), fishModel.getY(), null);

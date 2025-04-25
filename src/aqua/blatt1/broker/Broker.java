@@ -48,19 +48,19 @@ public class Broker {
             String id = new String("tank" + index);
 
             writeLock.lock();
+            boolean isFirst = clientCollection.size() == 0;
             clientCollection.add(id, address);
-            writeLock.unlock();
-
             
             // --- Neighbor Update
-            readLock.lock();
             InetSocketAddress leftOfRegistered = clientCollection.getLeftNeighorOf(index);
             InetSocketAddress rightOfRegistered = clientCollection.getRightNeighorOf(index);
-            readLock.unlock();
+            writeLock.unlock();
             
             endpoint.send(address, new RegisterResponse(id, leftOfRegistered, rightOfRegistered));
             endpoint.send(leftOfRegistered, new NeighborUpdate(address, Direction.RIGHT));
             endpoint.send(rightOfRegistered, new NeighborUpdate(address, Direction.LEFT));
+            if (isFirst)
+                endpoint.send(address, new Token());
         }
 
         private void deregister(InetSocketAddress address) {
@@ -94,16 +94,15 @@ public class Broker {
 
     private static final Endpoint endpoint = new Endpoint(4711);
     private static final int POOL_SIZE = 8;
-    private boolean stopRequested;
+    private static boolean stopRequested = false;
 
-    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Lock readLock = rwLock.readLock();
-    private final Lock writeLock = rwLock.writeLock();
+    private static final ReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private static final Lock readLock = rwLock.readLock();
+    private static final Lock writeLock = rwLock.writeLock();
     private final ClientCollection<InetSocketAddress> clientCollection;
 
     private Broker() {
         clientCollection = new ClientCollection<>();
-        stopRequested = false;
     }
 
     private void broker() {
