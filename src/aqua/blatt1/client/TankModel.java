@@ -29,7 +29,7 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 	private Optional<InetSocketAddress> rightNeighbor = Optional.empty();
 	private Optional<InetSocketAddress> leftNeigbor = Optional.empty();
 	private boolean hasToken = false;
-	private final Timer tokenTimer = new Timer();
+	private static final Timer tokenTimer = new Timer();
 
 	public TankModel(ClientCommunicator.ClientForwarder forwarder) {
 		this.fishies = Collections.newSetFromMap(new ConcurrentHashMap<FishModel, Boolean>());

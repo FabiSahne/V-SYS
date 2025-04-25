@@ -94,16 +94,15 @@ public class Broker {
 
     private static final Endpoint endpoint = new Endpoint(4711);
     private static final int POOL_SIZE = 8;
-    private boolean stopRequested;
+    private static boolean stopRequested = false;
 
-    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-    private final Lock readLock = rwLock.readLock();
-    private final Lock writeLock = rwLock.writeLock();
+    private static final ReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private static final Lock readLock = rwLock.readLock();
+    private static final Lock writeLock = rwLock.writeLock();
     private final ClientCollection<InetSocketAddress> clientCollection;
 
     private Broker() {
         clientCollection = new ClientCollection<>();
-        stopRequested = false;
     }
 
     private void broker() {
