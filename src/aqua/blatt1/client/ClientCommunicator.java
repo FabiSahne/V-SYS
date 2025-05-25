@@ -66,6 +66,13 @@ public class ClientCommunicator {
 			this.tankModel = tankModel;
 		}
 
+		private Optional<InetSocketAddress> leftNeighbor() {
+			return tankModel.getLeftNeighbor();
+		}
+		private Optional<InetSocketAddress> rightNeighbor() {
+			return tankModel.getRightNeighbor();
+		}
+
 		@Override
 		public void run() {
 			while (!isInterrupted()) {
@@ -80,8 +87,20 @@ public class ClientCommunicator {
 					tankModel.onNewNeighbor(rightNeighbor, Direction.RIGHT);
 				}
 
-				if (msg.getPayload() instanceof HandoffRequest)
-					tankModel.receiveFish(((HandoffRequest) msg.getPayload()).getFish());
+				if (msg.getPayload() instanceof HandoffRequest) {
+					HandoffRequest req = (HandoffRequest) msg.getPayload();
+					Direction dir = null;
+					if (msg.getSender().equals(leftNeighbor().orElse(null))) {
+						dir = Direction.RIGHT;
+					} else if (msg.getSender().equals(rightNeighbor().orElse(null))) {
+						dir = Direction.LEFT;
+					}
+					if (dir != null) {
+						tankModel.receiveFish(req.getFish(), dir);
+					} else {
+						tankModel.receiveFish(req.getFish()); // fallback
+					}
+				}
 
 				if (msg.getPayload() instanceof NeighborUpdate) {
 					InetSocketAddress address = ((NeighborUpdate) msg.getPayload()).getAddress();

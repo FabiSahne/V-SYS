@@ -73,6 +73,8 @@ public class TankView extends JPanel implements Observer {
 	}
 
 	public static void showGlobalSnapshot(int total) {
-		JOptionPane.showMessageDialog(null, "Globaler Schnappschuss: " + total + " Fische im System.");
+		new Thread(() -> {
+			JOptionPane.showMessageDialog(null, "Globaler Schnappschuss: " + total + " Fische im System.");
+		}).start();
 	}
 }

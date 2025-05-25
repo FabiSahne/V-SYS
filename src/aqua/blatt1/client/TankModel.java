@@ -216,14 +216,25 @@ public class TankModel extends Observable implements Iterable<FishModel> {
     }
 
     public synchronized void receiveSnapshotToken(int sum, boolean initiator) {
-        int total = sum + localSnapshot + inTransitFishLeft + inTransitFishRight;
+        int total;
         if (initiator && snapshotInitiator) {
-            // Show result
-            TankView.showGlobalSnapshot(total);
+            // Initiator: add nur die inTransitFish, nicht nochmal localSnapshot
+            total = sum + inTransitFishLeft + inTransitFishRight;
+            // Dialog asynchron, Token-Weitergabe vor Dialog!
+            leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotToken(addr, total, initiator));
+            new Thread(() -> TankView.showGlobalSnapshot(total)).start();
             snapshotInitiator = false;
         } else {
+            total = sum + localSnapshot + inTransitFishLeft + inTransitFishRight;
             leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotToken(addr, total, initiator));
         }
+    }
+
+    public Optional<InetSocketAddress> getLeftNeighbor() {
+        return leftNeigbor;
+    }
+    public Optional<InetSocketAddress> getRightNeighbor() {
+        return rightNeighbor;
     }
 
 }
