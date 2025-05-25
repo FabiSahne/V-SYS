@@ -2,6 +2,8 @@ package aqua.blatt1.broker;
 
 import java.io.Serializable;
 import java.net.InetSocketAddress;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -30,7 +32,19 @@ public class Broker {
         public void run() {
             Serializable payload = message.getPayload();
             if (payload instanceof RegisterRequest) {
-                register(message.getSender());
+                InetSocketAddress sender = message.getSender();
+                readLock.lock();
+                int index = clientCollection.indexOf(sender);
+                readLock.unlock();
+                if (index == -1) {
+                    System.out.println("INFO: Registering new client");
+                    register(sender);
+                } else {
+                    System.out.println("INFO: Client already registered, updating lease");
+                    writeLock.lock();
+                    clientCollection.updateLastSeen(index);
+                    writeLock.unlock();
+                }
             }
             if (payload instanceof DeregisterRequest) {
                 deregister(message.getSender());
@@ -56,7 +70,7 @@ public class Broker {
             InetSocketAddress rightOfRegistered = clientCollection.getRightNeighorOf(index);
             writeLock.unlock();
             
-            endpoint.send(address, new RegisterResponse(id, leftOfRegistered, rightOfRegistered));
+            endpoint.send(address, new RegisterResponse(id, leftOfRegistered, rightOfRegistered, 10 * 1000));
             endpoint.send(leftOfRegistered, new NeighborUpdate(address, Direction.RIGHT));
             endpoint.send(rightOfRegistered, new NeighborUpdate(address, Direction.LEFT));
             if (isFirst)
@@ -64,6 +78,7 @@ public class Broker {
         }
 
         private void deregister(InetSocketAddress address) {
+            System.out.println("INFO: Deregistering client");
 
             writeLock.lock();
             int index = clientCollection.indexOf(address);
@@ -100,6 +115,7 @@ public class Broker {
     private static final Lock readLock = rwLock.readLock();
     private static final Lock writeLock = rwLock.writeLock();
     private final ClientCollection<InetSocketAddress> clientCollection;
+    private final Timer garbageCollector = new Timer();
 
     private Broker() {
         clientCollection = new ClientCollection<>();
@@ -115,6 +131,17 @@ public class Broker {
         });
         uiThread.start();
 
+        garbageCollector.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                writeLock.lock();
+                if (clientCollection.removeInactiveClients(20 * 1000)) {
+                    System.out.println("INFO: Removed inactive clients");
+                }
+                writeLock.unlock();
+            }
+        }, 0, 1000);
+
         while (!stopRequested) {
             Message message = endpoint.nonBlockingReceive();
             if (message == null) {
@@ -128,6 +155,9 @@ public class Broker {
         }
 
         System.out.println("Shutdown broker!");
+
+
+        garbageCollector.cancel();
 
         es.shutdown();
         try {

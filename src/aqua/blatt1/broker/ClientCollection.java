@@ -1,6 +1,7 @@
 package aqua.blatt1.broker;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 /*
@@ -12,10 +13,12 @@ public class ClientCollection<T> {
 	private class Client {
 		final String id;
 		final T client;
+		Date lastSeen;
 
 		Client(String id, T client) {
 			this.id = id;
 			this.client = client;
+			this.lastSeen = new Date();
 		}
 	}
 
@@ -63,6 +66,26 @@ public class ClientCollection<T> {
 
 	public T getRightNeighorOf(int index) {
 		return index < clients.size() - 1 ? clients.get(index + 1).client : clients.get(0).client;
+	}
+
+	public Date getLastSeen(int index) {
+		return clients.get(index).lastSeen;
+	}
+
+	public ClientCollection<T> updateLastSeen(int index) {
+		clients.get(index).lastSeen = new Date();
+		return this;
+	}
+
+	public boolean removeInactiveClients(int inactiveSince) {
+		Date now = new Date();
+		for (int i = clients.size() - 1; i >= 0; i--) {
+			if (now.getTime() - clients.get(i).lastSeen.getTime() > inactiveSince) {
+				clients.remove(i);
+				return true;
+			}
+		}
+		return false;
 	}
 
 }

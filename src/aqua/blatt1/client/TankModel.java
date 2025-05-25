@@ -3,6 +3,7 @@ package aqua.blatt1.client;
 import java.net.InetSocketAddress;
 import java.util.Collections;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Observable;
 import java.util.Optional;
 import java.util.Random;
@@ -30,6 +31,7 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 	private Optional<InetSocketAddress> leftNeigbor = Optional.empty();
 	private boolean hasToken = false;
 	private static final Timer tokenTimer = new Timer();
+	private static final Timer leaseTimer = new Timer();
 
 	private SnapshotRecordingMode snapshotMode = SnapshotRecordingMode.IDLE;
 	private int localSnapshot = 0;
@@ -39,14 +41,26 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 	private int inTransitFishLeft = 0;
 	private int inTransitFishRight = 0;
 
+	// Forward references for Task 1
+	private final Map<String, FishReferenceState> forwardReferences = new ConcurrentHashMap<>();
+
 	public TankModel(ClientCommunicator.ClientForwarder forwarder) {
 		this.fishies = Collections.newSetFromMap(new ConcurrentHashMap<FishModel, Boolean>());
 		this.forwarder = forwarder;
 	}
 
-	synchronized void onRegistration(String id) {
+	synchronized void onRegistration(String id, int leaseDuration) {
 		this.id = id;
 		newFish(WIDTH - FishModel.getXSize(), rand.nextInt(HEIGHT - FishModel.getYSize()));
+
+		// start lease timer that reregisters with the broker
+		leaseTimer.schedule(new TimerTask() {
+			@Override
+			public void run() {
+				forwarder.register();
+			}
+		}, leaseDuration / 2, leaseDuration / 2);
+		
 	}
 
 	public synchronized void newFish(int x, int y) {
@@ -58,12 +72,14 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 					rand.nextBoolean() ? Direction.LEFT : Direction.RIGHT);
 
 			fishies.add(fish);
+			forwardReferences.put(fish.getId(), FishReferenceState.HERE);
 		}
 	}
 
 	synchronized void receiveFish(FishModel fish) {
 		fish.setToStart();
 		fishies.add(fish);
+		forwardReferences.put(fish.getId(), FishReferenceState.HERE);
 	}
 
 	synchronized void onNewNeighbor(InetSocketAddress address, Direction direction) {
@@ -98,11 +114,14 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 			if (fish.hitsEdge()) {
 				if (hasToken()) {
 					switch (fish.getDirection()) {
-						case Direction.LEFT:
+						case LEFT:
 							forwarder.handOff(fish, leftNeigbor);
+							forwardReferences.put(fish.getId(), FishReferenceState.LEFT);
 							break;
-						case Direction.RIGHT:
+						case RIGHT:
 							forwarder.handOff(fish, rightNeighbor);
+							forwardReferences.put(fish.getId(), FishReferenceState.RIGHT);
+							break;
 					}
 				} else {
 					fish.reverse();
@@ -135,6 +154,8 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 
 	public synchronized void finish() {
 		forwarder.deregister(id);
+		leaseTimer.cancel();
+		tokenTimer.cancel();
 	}
 
 	public boolean hasToken() {
@@ -206,6 +227,7 @@ public class TankModel extends Observable implements Iterable<FishModel> {
     public synchronized void receiveFish(FishModel fish, Direction dir) {
         fish.setToStart();
         fishies.add(fish);
+        forwardReferences.put(fish.getId(), FishReferenceState.HERE);
         // If in recording mode, add to in-transit count
         if (snapshotMode == SnapshotRecordingMode.LEFT && dir == Direction.LEFT) inTransitFishLeft++;
         if (snapshotMode == SnapshotRecordingMode.RIGHT && dir == Direction.RIGHT) inTransitFishRight++;
@@ -237,4 +259,33 @@ public class TankModel extends Observable implements Iterable<FishModel> {
         return rightNeighbor;
     }
 
+    public void locateFishGlobally(String fishId) {
+        FishReferenceState state = forwardReferences.get(fishId);
+        if (state == null || state == FishReferenceState.HERE) {
+            locateFishLocally(fishId);
+        } else if (state == FishReferenceState.LEFT) {
+            leftNeigbor.ifPresent(addr -> forwarderSendLocationRequest(addr, fishId));
+        } else if (state == FishReferenceState.RIGHT) {
+            rightNeighbor.ifPresent(addr -> forwarderSendLocationRequest(addr, fishId));
+        }
+    }
+
+    private void locateFishLocally(String fishId) {
+        for (FishModel fish : fishies) {
+            if (fish.getId().equals(fishId)) {
+                fish.toggle();
+                setChanged();
+                notifyObservers();
+                break;
+            }
+        }
+    }
+
+    private void forwarderSendLocationRequest(InetSocketAddress addr, String fishId) {
+        forwarderSendLocationRequestImpl(addr, fishId);
+    }
+
+    private void forwarderSendLocationRequestImpl(InetSocketAddress addr, String fishId) {
+        forwarder.sendLocationRequest(addr, fishId);
+    }
 }

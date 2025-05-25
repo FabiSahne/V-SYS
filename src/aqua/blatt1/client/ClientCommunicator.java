@@ -14,6 +14,7 @@ import aqua.blatt1.common.msgtypes.NeighborUpdate;
 import aqua.blatt1.common.msgtypes.RegisterRequest;
 import aqua.blatt1.common.msgtypes.RegisterResponse;
 import aqua.blatt1.common.msgtypes.Token;
+import aqua.blatt1.common.msgtypes.LocationRequest;
 
 public class ClientCommunicator {
 	private final Endpoint endpoint;
@@ -57,6 +58,10 @@ public class ClientCommunicator {
 		public void sendSnapshotToken(InetSocketAddress address, int fishCount, boolean initiator) {
 			endpoint.send(address, new aqua.blatt1.common.msgtypes.SnapshotToken(fishCount, initiator));
 		}
+
+		public void sendLocationRequest(InetSocketAddress address, String fishId) {
+			endpoint.send(address, new LocationRequest(fishId));
+		}
 	}
 
 	public class ClientReceiver extends Thread {
@@ -82,7 +87,8 @@ public class ClientCommunicator {
 					String id = ((RegisterResponse) msg.getPayload()).getId();
 					InetSocketAddress leftNeighbor = ((RegisterResponse) msg.getPayload()).getLeftNeighbor();
 					InetSocketAddress rightNeighbor = ((RegisterResponse) msg.getPayload()).getRightNeighbor();
-					tankModel.onRegistration(id);
+					int leaseDuration = ((RegisterResponse) msg.getPayload()).getLeaseDuration();
+					tankModel.onRegistration(id, leaseDuration);
 					tankModel.onNewNeighbor(leftNeighbor, Direction.LEFT);
 					tankModel.onNewNeighbor(rightNeighbor, Direction.RIGHT);
 				}
@@ -122,6 +128,11 @@ public class ClientCommunicator {
 				if (msg.getPayload() instanceof aqua.blatt1.common.msgtypes.SnapshotToken) {
 					aqua.blatt1.common.msgtypes.SnapshotToken token = (aqua.blatt1.common.msgtypes.SnapshotToken) msg.getPayload();
 					tankModel.receiveSnapshotToken(token.getFishCount(), token.isInitiator());
+				}
+
+				if (msg.getPayload() instanceof LocationRequest) {
+					LocationRequest req = (LocationRequest) msg.getPayload();
+					tankModel.locateFishGlobally(req.getFishId());
 				}
 
 			}
