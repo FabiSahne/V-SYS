@@ -31,6 +31,7 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 	private Optional<InetSocketAddress> leftNeigbor = Optional.empty();
 	private boolean hasToken = false;
 	private static final Timer tokenTimer = new Timer();
+	private static final Timer leaseTimer = new Timer();
 
 	private SnapshotRecordingMode snapshotMode = SnapshotRecordingMode.IDLE;
 	private int localSnapshot = 0;
@@ -48,9 +49,18 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 		this.forwarder = forwarder;
 	}
 
-	synchronized void onRegistration(String id) {
+	synchronized void onRegistration(String id, int leaseDuration) {
 		this.id = id;
 		newFish(WIDTH - FishModel.getXSize(), rand.nextInt(HEIGHT - FishModel.getYSize()));
+
+		// start lease timer that reregisters with the broker
+		leaseTimer.schedule(new TimerTask() {
+			@Override
+			public void run() {
+				forwarder.register();
+			}
+		}, leaseDuration / 2, leaseDuration / 2);
+		
 	}
 
 	public synchronized void newFish(int x, int y) {
@@ -144,6 +154,8 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 
 	public synchronized void finish() {
 		forwarder.deregister(id);
+		leaseTimer.cancel();
+		tokenTimer.cancel();
 	}
 
 	public boolean hasToken() {

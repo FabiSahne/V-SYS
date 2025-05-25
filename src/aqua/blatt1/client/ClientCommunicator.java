@@ -87,7 +87,8 @@ public class ClientCommunicator {
 					String id = ((RegisterResponse) msg.getPayload()).getId();
 					InetSocketAddress leftNeighbor = ((RegisterResponse) msg.getPayload()).getLeftNeighbor();
 					InetSocketAddress rightNeighbor = ((RegisterResponse) msg.getPayload()).getRightNeighbor();
-					tankModel.onRegistration(id);
+					int leaseDuration = ((RegisterResponse) msg.getPayload()).getLeaseDuration();
+					tankModel.onRegistration(id, leaseDuration);
 					tankModel.onNewNeighbor(leftNeighbor, Direction.LEFT);
 					tankModel.onNewNeighbor(rightNeighbor, Direction.RIGHT);
 				}
