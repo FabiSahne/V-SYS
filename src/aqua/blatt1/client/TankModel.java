@@ -31,6 +31,14 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 	private boolean hasToken = false;
 	private static final Timer tokenTimer = new Timer();
 
+	private SnapshotRecordingMode snapshotMode = SnapshotRecordingMode.IDLE;
+	private int localSnapshot = 0;
+	private boolean snapshotInitiator = false;
+	private boolean leftMarkerReceived = false;
+	private boolean rightMarkerReceived = false;
+	private int inTransitFishLeft = 0;
+	private int inTransitFishRight = 0;
+
 	public TankModel(ClientCommunicator.ClientForwarder forwarder) {
 		this.fishies = Collections.newSetFromMap(new ConcurrentHashMap<FishModel, Boolean>());
 		this.forwarder = forwarder;
@@ -144,5 +152,78 @@ public class TankModel extends Observable implements Iterable<FishModel> {
 			}
 		}, 2*1000);
 	}
+
+	public synchronized void initiateSnapshot() {
+        if (snapshotMode != SnapshotRecordingMode.IDLE) return;
+        snapshotInitiator = true;
+        localSnapshot = getLocalFishCount();
+        leftMarkerReceived = false;
+        rightMarkerReceived = false;
+        inTransitFishLeft = 0;
+        inTransitFishRight = 0;
+        snapshotMode = SnapshotRecordingMode.BOTH;
+        // send marker to both neighbors
+        leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotMarker(addr));
+        rightNeighbor.ifPresent(addr -> forwarder.sendSnapshotMarker(addr));
+    }
+
+    private int getLocalFishCount() {
+        // Only count fish that are not disappearing (not in handoff animation)
+        int count = 0;
+        for (FishModel fish : fishies) {
+            if (!fish.disappears()) count++;
+        }
+        return count;
+    }
+
+    public synchronized void receiveSnapshotMarker(Direction dir) {
+        if (snapshotMode == SnapshotRecordingMode.IDLE) {
+            // First marker received: record local state, start recording on other channel
+            localSnapshot = getLocalFishCount();
+            leftMarkerReceived = (dir == Direction.LEFT);
+            rightMarkerReceived = (dir == Direction.RIGHT);
+            snapshotMode = (dir == Direction.LEFT) ? SnapshotRecordingMode.RIGHT : SnapshotRecordingMode.LEFT;
+            // send marker to both neighbors
+            leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotMarker(addr));
+            rightNeighbor.ifPresent(addr -> forwarder.sendSnapshotMarker(addr));
+        } else {
+            // Second marker: stop recording on that channel
+            if (dir == Direction.LEFT) leftMarkerReceived = true;
+            if (dir == Direction.RIGHT) rightMarkerReceived = true;
+            if (leftMarkerReceived && rightMarkerReceived) {
+                snapshotMode = SnapshotRecordingMode.IDLE;
+                // send token if not initiator
+                if (!snapshotInitiator) {
+                    leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotToken(addr, localSnapshot, false));
+                } else {
+                    // initiator: start collecting
+                    leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotToken(addr, localSnapshot, true));
+                }
+            }
+        }
+    }
+
+    public synchronized void receiveFish(FishModel fish, Direction dir) {
+        fish.setToStart();
+        fishies.add(fish);
+        // If in recording mode, add to in-transit count
+        if (snapshotMode == SnapshotRecordingMode.LEFT && dir == Direction.LEFT) inTransitFishLeft++;
+        if (snapshotMode == SnapshotRecordingMode.RIGHT && dir == Direction.RIGHT) inTransitFishRight++;
+        if (snapshotMode == SnapshotRecordingMode.BOTH) {
+            if (dir == Direction.LEFT) inTransitFishLeft++;
+            if (dir == Direction.RIGHT) inTransitFishRight++;
+        }
+    }
+
+    public synchronized void receiveSnapshotToken(int sum, boolean initiator) {
+        int total = sum + localSnapshot + inTransitFishLeft + inTransitFishRight;
+        if (initiator && snapshotInitiator) {
+            // Show result
+            TankView.showGlobalSnapshot(total);
+            snapshotInitiator = false;
+        } else {
+            leftNeigbor.ifPresent(addr -> forwarder.sendSnapshotToken(addr, total, initiator));
+        }
+    }
 
 }

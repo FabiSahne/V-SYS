@@ -49,6 +49,14 @@ public class ClientCommunicator {
 		public void handOffToken(InetSocketAddress address) {
 			endpoint.send(address, new Token());
 		}
+
+		public void sendSnapshotMarker(InetSocketAddress address) {
+			endpoint.send(address, new aqua.blatt1.common.msgtypes.SnapshotMarker());
+		}
+
+		public void sendSnapshotToken(InetSocketAddress address, int fishCount, boolean initiator) {
+			endpoint.send(address, new aqua.blatt1.common.msgtypes.SnapshotToken(fishCount, initiator));
+		}
 	}
 
 	public class ClientReceiver extends Thread {
@@ -83,6 +91,18 @@ public class ClientCommunicator {
 
 				if (msg.getPayload() instanceof Token) {
 					tankModel.receiveToken();
+				}
+
+				if (msg.getPayload() instanceof aqua.blatt1.common.msgtypes.SnapshotMarker) {
+					// Determine direction based on sender (not available in this code, so assume both for demo)
+					// In real code, you would need to know which channel (LEFT/RIGHT) this marker came from
+					// For now, call for both directions for demonstration
+					tankModel.receiveSnapshotMarker(Direction.LEFT);
+					tankModel.receiveSnapshotMarker(Direction.RIGHT);
+				}
+				if (msg.getPayload() instanceof aqua.blatt1.common.msgtypes.SnapshotToken) {
+					aqua.blatt1.common.msgtypes.SnapshotToken token = (aqua.blatt1.common.msgtypes.SnapshotToken) msg.getPayload();
+					tankModel.receiveSnapshotToken(token.getFishCount(), token.isInitiator());
 				}
 
 			}

@@ -9,6 +9,7 @@ import java.awt.event.MouseEvent;
 import java.util.Observable;
 import java.util.Observer;
 
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 
@@ -69,5 +70,9 @@ public class TankView extends JPanel implements Observer {
 	@Override
 	public void update(Observable o, Object arg) {
 		SwingUtilities.invokeLater(repaintRunnable);
+	}
+
+	public static void showGlobalSnapshot(int total) {
+		JOptionPane.showMessageDialog(null, "Globaler Schnappschuss: " + total + " Fische im System.");
 	}
 }
