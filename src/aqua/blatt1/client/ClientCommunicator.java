@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import messaging.Endpoint;
 import messaging.Message;
+import messaging.SecureEndpoint; // Added import
 import aqua.blatt1.common.Direction;
 import aqua.blatt1.common.FishModel;
 import aqua.blatt1.common.Properties;
@@ -20,7 +21,7 @@ public class ClientCommunicator {
 	private final Endpoint endpoint;
 
 	public ClientCommunicator() {
-		endpoint = new Endpoint();
+		endpoint = new SecureEndpoint(); // Replaced Endpoint with SecureEndpoint and added port 0
 	}
 
 	public class ClientForwarder {

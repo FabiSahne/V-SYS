@@ -12,12 +12,14 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.swing.JOptionPane;
 
+import aqua.blatt1.common.Properties;
 import aqua.blatt1.common.Direction;
 import aqua.blatt1.common.FishModel;
 import aqua.blatt1.common.msgtypes.*;
 import aqua.blatt2.broker.PoisonPill;
 import messaging.Endpoint;
 import messaging.Message;
+import messaging.SecureEndpoint;
 
 public class Broker {
 
@@ -107,7 +109,7 @@ public class Broker {
         }
     }
 
-    private static final Endpoint endpoint = new Endpoint(4711);
+    private static final Endpoint endpoint = new SecureEndpoint(Properties.PORT);
     private static final int POOL_SIZE = 8;
     private static boolean stopRequested = false;
 
