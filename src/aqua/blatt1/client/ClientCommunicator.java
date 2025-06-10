@@ -21,7 +21,7 @@ public class ClientCommunicator {
 	private final Endpoint endpoint;
 
 	public ClientCommunicator() {
-		endpoint = new SecureEndpoint(); // Replaced Endpoint with SecureEndpoint and added port 0
+		endpoint = new SecureEndpoint(); // Replaced Endpoint with SecureEndpoint
 	}
 
 	public class ClientForwarder {

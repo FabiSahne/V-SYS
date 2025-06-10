@@ -1,114 +1,191 @@
 package messaging;
 
 import javax.crypto.Cipher;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.security.GeneralSecurityException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class SecureEndpoint extends Endpoint {
+
+    // Define KeyExchangeMessage as a private static inner class
+    private static class KeyExchangeMessage implements Serializable {
+        private static final long serialVersionUID = 1L; // Good practice for Serializable classes
+        private final PublicKey publicKey;
+
+        public KeyExchangeMessage(PublicKey publicKey) {
+            this.publicKey = publicKey;
+        }
+
+        public PublicKey getPublicKey() {
+            return publicKey;
+        }
+    }
+
     private final Endpoint internalEndpoint;
-    private final SecretKey secretKey;
-    private final Cipher encryptCipher;
-    private final Cipher decryptCipher;
+    private final KeyPair keyPair;
+    private final PublicKey publicKey;
+    private final PrivateKey privateKey;
+    private final Map<InetSocketAddress, PublicKey> peerPublicKeys;
 
     public SecureEndpoint() {
         super();
         this.internalEndpoint = new Endpoint();
+        this.peerPublicKeys = new ConcurrentHashMap<>();
         try {
-            byte[] keyBytes = "CAFEBABECAFEBABE".getBytes();
-            this.secretKey = new SecretKeySpec(keyBytes, "AES");
-
-            this.encryptCipher = Cipher.getInstance("AES");
-            this.encryptCipher.init(Cipher.ENCRYPT_MODE, this.secretKey);
-
-            this.decryptCipher = Cipher.getInstance("AES");
-            this.decryptCipher.init(Cipher.DECRYPT_MODE, this.secretKey);
+            KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+            keyGen.initialize(2048);
+            this.keyPair = keyGen.generateKeyPair();
+            this.publicKey = this.keyPair.getPublic();
+            this.privateKey = this.keyPair.getPrivate();
         } catch (GeneralSecurityException e) {
-            throw new RuntimeException("Failed to initialize SecureEndpoint", e);
+            throw new RuntimeException("Failed to initialize SecureEndpoint RSA keys", e);
         }
     }
 
     public SecureEndpoint(int port) {
         super(port);
         this.internalEndpoint = new Endpoint(port);
+        this.peerPublicKeys = new ConcurrentHashMap<>();
         try {
-            byte[] keyBytes = "CAFEBABECAFEBABE".getBytes();
-            this.secretKey = new SecretKeySpec(keyBytes, "AES");
-
-            this.encryptCipher = Cipher.getInstance("AES");
-            this.encryptCipher.init(Cipher.ENCRYPT_MODE, this.secretKey);
-
-            this.decryptCipher = Cipher.getInstance("AES");
-            this.decryptCipher.init(Cipher.DECRYPT_MODE, this.secretKey);
+            KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+            keyGen.initialize(2048);
+            this.keyPair = keyGen.generateKeyPair();
+            this.publicKey = this.keyPair.getPublic();
+            this.privateKey = this.keyPair.getPrivate();
         } catch (GeneralSecurityException e) {
-            throw new RuntimeException("Failed to initialize SecureEndpoint", e);
+            throw new RuntimeException("Failed to initialize SecureEndpoint RSA keys", e);
         }
     }
 
     @Override
     public void send(InetSocketAddress receiver, Serializable payload) {
         try {
-            if (payload instanceof Message) {
-                Message originalMessage = (Message) payload;
-                Serializable originalPayload = originalMessage.getPayload();
-                byte[] encryptedPayloadBytes = encryptCipher.doFinal(serialize(originalPayload));
-                Message encryptedMessage = new Message(encryptedPayloadBytes, originalMessage.getSender());
-                internalEndpoint.send(receiver, encryptedMessage.getPayload());
-            } else {
-                 //Direct payload encryption if it's not a Message object (though typically it should be wrapped in Message)
-                byte[] encryptedPayloadBytes = encryptCipher.doFinal(serialize(payload));
-                internalEndpoint.send(receiver, encryptedPayloadBytes);
+            PublicKey receiverPublicKey = peerPublicKeys.get(receiver);
+
+            if (receiverPublicKey == null) {
+                // Send our public key as KeyExchangeMessage. This is a Serializable object.
+                internalEndpoint.send(receiver, new KeyExchangeMessage(this.publicKey));
+                System.out.println("Sent KeyExchangeMessage to: " + receiver + ". Original message will not be sent in this call.");
+                // The original message is not sent if the key is unknown.
+                // Application layer needs to handle retries or queueing.
+                return;
             }
+
+            // If key is known, encrypt the payload and send.
+            // The payload here is the application's intended serializable data.
+            // If the application wrapped its data in a Message object before calling SecureEndpoint.send,
+            // that Message object itself is the 'payload' to be encrypted.
+
+            Cipher rsaEncryptCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            rsaEncryptCipher.init(Cipher.ENCRYPT_MODE, receiverPublicKey);
+            byte[] encryptedPayloadBytes = rsaEncryptCipher.doFinal(serialize(payload));
+
+            // Send the encrypted byte array. byte[] is Serializable.
+            internalEndpoint.send(receiver, encryptedPayloadBytes);
+
         } catch (Exception e) {
-            System.err.println("Error sending encrypted message: " + e.getMessage());
-            // Optionally, rethrow or handle more gracefully
+            System.err.println("Error in SecureEndpoint send: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private Message handleReceivedMessage(Message message) {
+        if (message == null) {
+            return null;
+        }
+
+        Serializable payload = message.getPayload();
+        InetSocketAddress sender = message.getSender();
+
+        if (payload instanceof KeyExchangeMessage) {
+            KeyExchangeMessage keyMsg = (KeyExchangeMessage) payload;
+            PublicKey peerKey = keyMsg.getPublicKey();
+            
+            // Store the sender's public key
+            if (sender != null && peerKey != null) {
+                peerPublicKeys.put(sender, peerKey);
+                System.out.println("Received and stored public key from: " + sender);
+
+                // Respond with our public key if this is the first time we've received theirs,
+                // or to ensure they have ours.
+                // Avoid sending if they just sent us our own key (which shouldn't happen).
+                if (!peerPublicKeys.containsKey(sender) || !this.publicKey.equals(peerKey)) {
+                     System.out.println("Sending our public key in response to: " + sender);
+                     // Send KeyExchangeMessage directly as the payload.
+                     internalEndpoint.send(sender, new KeyExchangeMessage(this.publicKey));
+                }
+            } else {
+                 System.err.println("Received KeyExchangeMessage with null sender or null key.");
+            }
+            return null; // KeyExchangeMessages are not passed to the application
+        }
+
+        if (payload instanceof byte[]) { // Assumed to be an encrypted message
+            try {
+                Cipher rsaDecryptCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+                rsaDecryptCipher.init(Cipher.DECRYPT_MODE, this.privateKey);
+                byte[] decryptedPayloadBytes = rsaDecryptCipher.doFinal((byte[]) payload);
+                Serializable decryptedPayload = deserialize(decryptedPayloadBytes);
+                // Return a new Message object with the decrypted payload and original sender
+                return new Message(decryptedPayload, sender);
+            } catch (Exception e) {
+                System.err.println("Error decrypting message from " + sender + ": " + e.getMessage());
+                e.printStackTrace();
+                return null; // Failed to decrypt
+            }
+        } else {
+            // If the payload is not a KeyExchangeMessage and not a byte[], it's unexpected.
+            // It could be an unencrypted message if the other side hasn't implemented encryption yet,
+            // or a programming error.
+            System.err.println("Received non-encrypted, non-KeyExchange payload from " + sender + ": " + payload.getClass().getName() + ". Passing it up as is.");
+            // For robustness, one might choose to pass it up, or discard it.
+            // Passing it up as a new Message object.
+            return new Message(payload, sender);
         }
     }
 
     @Override
     public Message blockingReceive() {
-        Message encryptedMessage = internalEndpoint.blockingReceive();
-        if (encryptedMessage == null) {
-            return null;
+        while (true) { // Loop to keep trying to receive until an application message or null
+            Message rawMessage = internalEndpoint.blockingReceive();
+            if (rawMessage == null) {
+                return null; // Internal endpoint indicates no more messages (or error)
+            }
+            Message appMessage = handleReceivedMessage(rawMessage);
+            if (appMessage != null) {
+                return appMessage; // Decrypted application message
+            }
+            // If appMessage is null, it was a KeyExchangeMessage (handled) or an error during handling.
+            // Loop continues to get the next message.
         }
-        return decryptMessage(encryptedMessage);
     }
 
     @Override
     public Message nonBlockingReceive() {
-        Message encryptedMessage = internalEndpoint.nonBlockingReceive();
-        if (encryptedMessage == null) {
-            return null;
+        // Try to get a message without blocking
+        Message rawMessage = internalEndpoint.nonBlockingReceive();
+        if (rawMessage == null) {
+            return null; // No message available
         }
-        return decryptMessage(encryptedMessage);
+        
+        // Process the raw message. This might be a KeyExchangeMessage or an encrypted app message.
+        Message appMessage = handleReceivedMessage(rawMessage);
+        
+        // If appMessage is null, it means rawMessage was a KeyExchangeMessage (which was handled)
+        // or there was an error processing rawMessage.
+        // In a non-blocking scenario, we return null if the first message pulled was for internal use.
+        // The caller can try again.
+        // If appMessage is not null, it's a decrypted application message.
+        return appMessage;
     }
 
-    private Message decryptMessage(Message encryptedMessage) {
-        try {
-            Serializable encryptedPayload = encryptedMessage.getPayload();
-            byte[] decryptedPayloadBytes;
-            if (encryptedPayload instanceof byte[]) {
-                decryptedPayloadBytes = decryptCipher.doFinal((byte[]) encryptedPayload);
-            } else {
-                // This case should ideally not happen if send always encrypts to byte[]
-                System.err.println("Warning: Received payload is not byte[], attempting direct deserialization.");
-                return encryptedMessage; // Or handle as an error
-            }
-            Serializable decryptedPayload = deserialize(decryptedPayloadBytes);
-            return new Message(decryptedPayload, encryptedMessage.getSender());
-        } catch (Exception e) {
-            System.err.println("Error decrypting message: " + e.getMessage());
-            // Return the original message or null, or throw an exception, depending on desired error handling
-            return null; 
-        }
-    }
-
-    // Helper methods for serialization, assuming they are protected or public in Endpoint or a utility class
-    // If not, these need to be implemented or adjusted.
-    // For now, let's assume Endpoint has these or similar helper methods, or we add them.
-
+    // Helper methods for serialization
     private byte[] serialize(Serializable obj) throws java.io.IOException {
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos);
