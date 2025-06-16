@@ -71,7 +71,8 @@ public class SecureEndpoint extends Endpoint {
             if (receiverPublicKey == null) {
                 // Send our public key as KeyExchangeMessage. This is a Serializable object.
                 internalEndpoint.send(receiver, new KeyExchangeMessage(this.publicKey));
-                System.out.println("Sent KeyExchangeMessage to: " + receiver + ". Original message will not be sent in this call.");
+                System.out.println("Sent KeyExchangeMessage to: " + receiver
+                        + ". Original message will not be sent in this call.");
                 // The original message is not sent if the key is unknown.
                 // Application layer needs to handle retries or queueing.
                 return;
@@ -79,7 +80,8 @@ public class SecureEndpoint extends Endpoint {
 
             // If key is known, encrypt the payload and send.
             // The payload here is the application's intended serializable data.
-            // If the application wrapped its data in a Message object before calling SecureEndpoint.send,
+            // If the application wrapped its data in a Message object before calling
+            // SecureEndpoint.send,
             // that Message object itself is the 'payload' to be encrypted.
 
             Cipher rsaEncryptCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
@@ -106,7 +108,7 @@ public class SecureEndpoint extends Endpoint {
         if (payload instanceof KeyExchangeMessage) {
             KeyExchangeMessage keyMsg = (KeyExchangeMessage) payload;
             PublicKey peerKey = keyMsg.getPublicKey();
-            
+
             // Store the sender's public key
             if (sender != null && peerKey != null) {
                 peerPublicKeys.put(sender, peerKey);
@@ -116,12 +118,12 @@ public class SecureEndpoint extends Endpoint {
                 // or to ensure they have ours.
                 // Avoid sending if they just sent us our own key (which shouldn't happen).
                 if (!peerPublicKeys.containsKey(sender) || !this.publicKey.equals(peerKey)) {
-                     System.out.println("Sending our public key in response to: " + sender);
-                     // Send KeyExchangeMessage directly as the payload.
-                     internalEndpoint.send(sender, new KeyExchangeMessage(this.publicKey));
+                    System.out.println("Sending our public key in response to: " + sender);
+                    // Send KeyExchangeMessage directly as the payload.
+                    internalEndpoint.send(sender, new KeyExchangeMessage(this.publicKey));
                 }
             } else {
-                 System.err.println("Received KeyExchangeMessage with null sender or null key.");
+                System.err.println("Received KeyExchangeMessage with null sender or null key.");
             }
             return null; // KeyExchangeMessages are not passed to the application
         }
@@ -141,9 +143,11 @@ public class SecureEndpoint extends Endpoint {
             }
         } else {
             // If the payload is not a KeyExchangeMessage and not a byte[], it's unexpected.
-            // It could be an unencrypted message if the other side hasn't implemented encryption yet,
+            // It could be an unencrypted message if the other side hasn't implemented
+            // encryption yet,
             // or a programming error.
-            System.err.println("Received non-encrypted, non-KeyExchange payload from " + sender + ": " + payload.getClass().getName() + ". Passing it up as is.");
+            System.err.println("Received non-encrypted, non-KeyExchange payload from " + sender + ": "
+                    + payload.getClass().getName() + ". Passing it up as is.");
             // For robustness, one might choose to pass it up, or discard it.
             // Passing it up as a new Message object.
             return new Message(payload, sender);
@@ -161,7 +165,8 @@ public class SecureEndpoint extends Endpoint {
             if (appMessage != null) {
                 return appMessage; // Decrypted application message
             }
-            // If appMessage is null, it was a KeyExchangeMessage (handled) or an error during handling.
+            // If appMessage is null, it was a KeyExchangeMessage (handled) or an error
+            // during handling.
             // Loop continues to get the next message.
         }
     }
@@ -173,13 +178,16 @@ public class SecureEndpoint extends Endpoint {
         if (rawMessage == null) {
             return null; // No message available
         }
-        
-        // Process the raw message. This might be a KeyExchangeMessage or an encrypted app message.
+
+        // Process the raw message. This might be a KeyExchangeMessage or an encrypted
+        // app message.
         Message appMessage = handleReceivedMessage(rawMessage);
-        
-        // If appMessage is null, it means rawMessage was a KeyExchangeMessage (which was handled)
+
+        // If appMessage is null, it means rawMessage was a KeyExchangeMessage (which
+        // was handled)
         // or there was an error processing rawMessage.
-        // In a non-blocking scenario, we return null if the first message pulled was for internal use.
+        // In a non-blocking scenario, we return null if the first message pulled was
+        // for internal use.
         // The caller can try again.
         // If appMessage is not null, it's a decrypted application message.
         return appMessage;
