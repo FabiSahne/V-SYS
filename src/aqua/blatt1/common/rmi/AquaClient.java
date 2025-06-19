@@ -12,4 +12,6 @@ public interface AquaClient extends Remote {
 	void handoffFish(FishModel fish) throws RemoteException;
 
 	void updateNeighbor(AquaClient neighbor, Direction direction) throws RemoteException;
+
+    void sendSnapshotMarker(Direction direction) throws RemoteException;
 }

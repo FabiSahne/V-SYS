@@ -31,6 +31,15 @@ public class TankModel extends Observable implements Iterable<FishModel>, AquaCl
 	private AquaClient rightNeighbor;
 	private boolean hasToken = false;
 
+	// snapshot
+	private SnapshotRecordingMode snapshotMode = SnapshotRecordingMode.IDLE;
+	private int localSnapshot = 0;
+	private boolean snapshotInitiator = false;
+	private boolean leftMarkerReceived = false;
+	private boolean rightMarkerReceived = false;
+	private int inTransitFishLeft = 0;
+	private int inTransitFishRight = 0;
+
 	public TankModel(AquaBroker broker) {
 		this.broker = broker;
 		this.fishies = Collections.newSetFromMap(new ConcurrentHashMap<FishModel, Boolean>());
@@ -97,8 +106,14 @@ public class TankModel extends Observable implements Iterable<FishModel>, AquaCl
 			if (fish.hitsEdge()) {
 				try {
 					if (hasToken()) {
-						broker.handoffFish(id, fish);
-						it.remove();
+						switch (fish.getDirection()) {
+							case Direction.RIGHT: 
+								rightNeighbor.handoffFish(fish);
+								break;
+							case Direction.LEFT:
+								leftNeighbor.handoffFish(fish);
+								break;
+						};
 					} else {
 						fish.reverse();
 					}
@@ -157,5 +172,50 @@ public class TankModel extends Observable implements Iterable<FishModel>, AquaCl
 				e.printStackTrace();
 			}
 		}).start();
+	}
+
+	@Override
+	public void sendSnapshotMarker(Direction direction) {
+		if (snapshotMode == SnapshotRecordingMode.IDLE) {
+			localSnapshot = getLocalFishCount();
+			leftMarkerReceived = (direction == Direction.RIGHT);
+			rightMarkerReceived = (direction == Direction.LEFT);
+			snapshotMode = leftMarkerReceived ? SnapshotRecordingMode.RIGHT : SnapshotRecordingMode.LEFT;
+			try {
+				if (leftMarkerReceived) {
+					rightNeighbor.sendSnapshotMarker(direction);
+				} else {
+					leftNeighbor.sendSnapshotMarker(direction);
+				}
+			} catch (RemoteException e) {
+				System.err.println("Exception: " + e);
+			}
+		} else {
+			leftMarkerReceived = (direction == Direction.RIGHT);
+			rightMarkerReceived = (direction == Direction.LEFT);
+		}
+	}
+
+	public synchronized void initiateSnapshot() {
+		if (snapshotMode == SnapshotRecordingMode.IDLE) {
+			snapshotInitiator = true;
+			localSnapshot = getLocalFishCount();
+			leftMarkerReceived = false;
+			rightMarkerReceived = false;
+			inTransitFishLeft = 0;
+			inTransitFishRight = 0;
+			snapshotMode = SnapshotRecordingMode.BOTH;
+
+			//send marker
+			try {
+				rightNeighbor.sendSnapshotMarker(Direction.RIGHT);
+			} catch (RemoteException e) {
+				System.err.println("Exception: " + e);
+			}
+		}
+	}
+
+	private int getLocalFishCount() {
+		return (int) fishies.stream().filter(f -> f.disappears()).count();
 	}
 }

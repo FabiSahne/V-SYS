@@ -17,7 +17,8 @@ public class ToggleController implements ActionListener {
         if (e.getSource() instanceof JMenuItem) {
             JMenuItem menuItem = (JMenuItem) e.getSource();
             String fishId = menuItem.getText();
-            tankModel.locateFishGlobally(fishId);
+            // TODO: Fix snapshots
+            // tankModel.locateFishGlobally(fishId);
         }
     }
 }
